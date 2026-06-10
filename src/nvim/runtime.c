@@ -1335,13 +1335,13 @@ void add_pack_start_dirs(void)
 
 static bool pack_has_entries(char *buf)
 {
-  int num_files;
-  char **files;
-  char *(pat[]) = { buf };
-  if (gen_expand_wildcards(1, pat, &num_files, &files, EW_DIR) == OK) {
-    FreeWild(num_files, files);
+  Directory dir;
+  if (!os_scandir(&dir, buf)) {
+    return false;
   }
-  return num_files > 0;
+  const char *name = os_scandir_next(&dir);
+  os_closedir(&dir);
+  return name != NULL;
 }
 
 static bool add_pack_start_dir(int num_fnames, char **fnames, bool all, void *cookie)
