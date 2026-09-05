@@ -86,3 +86,18 @@ tags
 /contrib/result-*
 
 CMakeUserPresets.json
+
+# Session / tooling artifacts
+/profile-data/
+/sandbox/
+/.infigraph/
+/.claude/
+/tsconfig.json
+
+# makepkg build output
+/packages/*/src/
+/packages/*/pkg/
+/packages/*/*.pkg.tar.zst*
+/packages/*/*.tar.gz*
+/packages/*/.tmpcheck/
+/subprojects/.wraplock
