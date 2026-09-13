@@ -92,6 +92,8 @@ pub fn build(b: *std.Build) !void {
     const optimize_lua = if (optimize == .Debug or optimize == .ReleaseSafe) .ReleaseSmall else optimize;
 
     const use_luajit = b.option(bool, "luajit", "use luajit") orelse !is_wasm;
+    const use_mimalloc = b.option(bool, "mimalloc", "use mimalloc") orelse false;
+    const mimalloc_path = b.option([]const u8, "mimalloc-path", "Path to mimalloc library directory");
     const lualib_name = if (use_luajit) "luajit" else "lua5.1";
     const host_use_luajit = if (cross_compiling) false else use_luajit;
     const E = enum { luajit, lua51 };
@@ -535,6 +537,23 @@ pub fn build(b: *std.Build) !void {
     }
     if (is_windows) {
         nvim_mod.linkSystemLibrary("netapi32", .{});
+    }
+    if (use_mimalloc) {
+        if (mimalloc_path) |path| {
+            // Link the archive directly as an object: this both avoids a
+            // library search dependency and prevents zig from emitting a
+            // RUNPATH pointing at the build directory.
+            nvim_mod.addObjectFile(.{ .cwd_relative = b.fmt("{s}/libmimalloc.a", .{path}) });
+        } else {
+            nvim_mod.linkSystemLibrary("mimalloc", .{ .preferred_link_mode = .static });
+        }
+        // nvim never calls mi_* directly — the malloc/free override relies on the
+        // linker extracting the member that defines `malloc` and its transitive
+        // deps. With LLD's LTO plugin that extraction never happens by itself
+        // (libc.so already defines malloc), so force the override symbols in.
+        for ([_][]const u8{ "malloc", "free", "calloc", "realloc", "posix_memalign" }) |sym| {
+            nvim_exe.forceUndefinedSymbol(sym);
+        }
     }
     nvim_mod.addIncludePath(b.path("src"));
     nvim_mod.addIncludePath(gen_config.getDirectory());
