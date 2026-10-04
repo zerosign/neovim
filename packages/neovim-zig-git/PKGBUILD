@@ -1,0 +1,86 @@
+# Maintainer: zerosign
+_pkgname=neovim
+pkgname="$_pkgname-zig-git"
+pkgver=0.13.0.r1817.g80336d58d2
+pkgrel=1
+pkgdesc='Neovim built with Zig: Static dependencies, mimalloc, and native optimizations'
+arch=(x86_64)
+url='https://neovim.io'
+license=('custom:neovim')
+depends=('glibc' 'gcc-libs')
+makedepends=('zig' 'git' 'cmake' 'ninja')
+provides=("$_pkgname" 'vim-plugin-runtime')
+conflicts=("$_pkgname")
+source=("mimalloc-v3.5.1.tar.gz::https://github.com/microsoft/mimalloc/archive/refs/tags/v3.5.1.tar.gz")
+sha512sums=('3344d4e8854136ce575105117139e2ef7f4da938392784865a933af35ddc4738167076910eb3acf1fce35b213ff0912ae986cfe40f0ba72880af6f22be00e5fe')
+
+prepare() {
+  # mimalloc static override lib. The system libmimalloc.a is GCC-LTO slim
+  # (empty __gnu_lto_slim stubs), which LLVM's lld cannot consume, so build
+  # from source with MI_OVERRIDE=ON (non-LTO) like the meson subproject does.
+  cd "$srcdir/mimalloc-3.5.1"
+  cmake -B build-static \
+    -DMI_OVERRIDE=ON \
+    -DMI_BUILD_SHARED=OFF \
+    -DMI_BUILD_STATIC=ON \
+    -DMI_BUILD_TESTS=OFF \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_FLAGS_RELEASE="-O2 -fno-lto"
+  cmake --build build-static -j1 --target mimalloc-static
+}
+
+pkgver() {
+  cd "$startdir/../.."
+  local nvim_version nvim_version_git
+  nvim_version="$(sed -nE '/NVIM_VERSION_/ s/.* +([0-9]+)\).*/\1/p' ./CMakeLists.txt | sed ':b;N;$!bb;s/\n/./g')"
+  nvim_version_git="$(git describe --first-parent --always | sed -E 's/^v[0-9]+.[0-9]+.[0-9]+-//; s/^([0-9]+)-([a-z0-9]+)/\1\.\2/')"
+  printf "%s.r%s\n" "$nvim_version" "$nvim_version_git"
+}
+
+build() {
+  cd "$startdir/../.."
+  
+  # Optimization flags:
+  # -Doptimize=ReleaseFast: Max speed
+  # -Dcpu=native: native instructions
+  # -Dmimalloc=true: use mimalloc allocator
+  # -Dinstall-path=/usr: default runtime path
+  
+  zig build \
+    -Doptimize=ReleaseFast \
+    -Dcpu=native \
+    -Dluajit=true \
+    -Dmimalloc=true \
+    -Dmimalloc-path="$srcdir/mimalloc-3.5.1/build-static" \
+    -Dinstall-path=/usr \
+    -j1
+}
+
+check() {
+  cd "$startdir/../.."
+  ./zig-out/bin/nvim --version
+}
+
+package() {
+  cd "$startdir/../.."
+  
+  zig build install \
+    -Doptimize=ReleaseFast \
+    -Dcpu=native \
+    -Dluajit=true \
+    -Dmimalloc=true \
+    -Dmimalloc-path="$srcdir/mimalloc-3.5.1/build-static" \
+    -Dinstall-path=/usr \
+    -j1 \
+    --prefix "$pkgdir/usr"
+
+  install -Dm644 LICENSE.txt -t "${pkgdir}/usr/share/licenses/${pkgname}/"
+  
+  # Arch Linux integration
+  mkdir -p "${pkgdir}"/etc/xdg/nvim
+  echo "\" This line makes pacman-installed global Arch Linux vim packages work." > "${pkgdir}"/etc/xdg/nvim/sysinit.vim
+  echo "source /usr/share/nvim/archlinux.vim" >> "${pkgdir}"/etc/xdg/nvim/sysinit.vim
+
+  mkdir -p "${pkgdir}"/usr/share/vim
+  echo "set runtimepath+=/usr/share/vim/vimfiles" > "${pkgdir}"/usr/share/nvim/archlinux.vim
+}
