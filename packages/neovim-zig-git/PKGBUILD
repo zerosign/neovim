@@ -1,0 +1,64 @@
+# Maintainer: zerosign
+_pkgname=neovim
+pkgname="$_pkgname-zig-git"
+pkgver=0.13.0.r1864.g86a8176897
+pkgrel=1
+pkgdesc='Neovim built with Zig: static dependencies and native optimizations'
+arch=(x86_64)
+url='https://neovim.io'
+license=('custom:neovim')
+depends=('glibc' 'gcc-libs')
+makedepends=('zig' 'git')
+provides=("$_pkgname" 'vim-plugin-runtime')
+conflicts=("$_pkgname")
+
+pkgver() {
+  cd "$startdir/../.."
+  local nvim_version nvim_version_git
+  nvim_version="$(sed -nE '/NVIM_VERSION_/ s/.* +([0-9]+)\).*/\1/p' ./CMakeLists.txt | sed ':b;N;$!bb;s/\n/./g')"
+  nvim_version_git="$(git describe --first-parent --always | sed -E 's/^v[0-9]+.[0-9]+.[0-9]+-//; s/^([0-9]+)-([a-z0-9]+)/\1\.\2/')"
+  printf "%s.r%s\n" "$nvim_version" "$nvim_version_git"
+}
+
+build() {
+  cd "$startdir/../.."
+
+  # Optimization flags:
+  # -Doptimize=ReleaseFast: Max speed
+  # -Dcpu=native: native instructions
+  # -Dinstall-path=/usr: default runtime path
+
+  zig build \
+    -Doptimize=ReleaseFast \
+    -Dcpu=native \
+    -Dluajit=true \
+    -Dinstall-path=/usr \
+    -j1
+}
+
+check() {
+  cd "$startdir/../.."
+  ./zig-out/bin/nvim --version
+}
+
+package() {
+  cd "$startdir/../.."
+
+  zig build install \
+    -Doptimize=ReleaseFast \
+    -Dcpu=native \
+    -Dluajit=true \
+    -Dinstall-path=/usr \
+    -j1 \
+    --prefix "$pkgdir/usr"
+
+  install -Dm644 LICENSE.txt -t "${pkgdir}/usr/share/licenses/${pkgname}/"
+
+  # Arch Linux integration
+  mkdir -p "${pkgdir}"/etc/xdg/nvim
+  echo "\" This line makes pacman-installed global Arch Linux vim packages work." > "${pkgdir}"/etc/xdg/nvim/sysinit.vim
+  echo "source /usr/share/nvim/archlinux.vim" >> "${pkgdir}"/etc/xdg/nvim/sysinit.vim
+
+  mkdir -p "${pkgdir}"/usr/share/vim
+  echo "set runtimepath+=/usr/share/vim/vimfiles" > "${pkgdir}"/usr/share/nvim/archlinux.vim
+}
